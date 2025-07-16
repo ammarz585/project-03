@@ -5,20 +5,23 @@ from tkinter import filedialog, messagebox, simpledialog
 from gui_helpers import get_icon_for_file, open_file_externally
 from file_operations import FileOperationsMixin
 from search_operations import SearchOperationsMixin
-
+import shutil
 class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
     def __init__(self, root, folder_icon, search_icon):
         super().__init__(root)
         self.root = root
         self.folder_icon = folder_icon
         self.search_icon = search_icon
+       
 
         self.history = []
         self.history_index = -1
         self.current_path = None
         self.selected_item = None
         self.icon_refs = {}
-
+        self.clipboard_path = None
+        self.clipboard_action = None  # "cut" or "copy"
+        self.root.bind_all("<Delete>", self.handle_delete_key)
         self.root.title("📁 Recursive File Explorer")
         self.root.geometry("800x600")
 
@@ -82,7 +85,7 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
         self.folder_buttons_frame = tk.Frame(folder_selector_frame)
         self.folder_buttons_frame.pack(fill=tk.X)
 
-        self.add_multi_btn = tk.Button(folder_selector_frame, text="📂 Add More Folders", command=self.add_multiple_folders)
+        self.add_multi_btn = tk.Button(folder_selector_frame, text="📂 Add Folders", command=self.add_multiple_folders)
         self.add_multi_btn.pack(pady=5)
 
         # === Canvas Explorer ===
@@ -106,6 +109,9 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
 
         self.root.bind_all("<Control-Left>", lambda e: self.go_back())
         self.root.bind_all("<Control-Right>", lambda e: self.go_forward())
+        self.root.bind_all("<Control-c>", self.handle_ctrl_copy)
+        self.root.bind_all("<Control-x>", self.handle_ctrl_cut)
+        self.root.bind_all("<Control-v>", self.handle_ctrl_paste)
         self.inner_frame.bind("<Button-3>", self.show_context_menu_canvas)
 
         self.try_initial_folder()
@@ -119,6 +125,14 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
             self.folder_paths.append(folder)
             self.create_folder_button(folder)
             self.open_folder_path(folder)
+    def handle_delete_key(self, event=None):
+        if not self.selected_item:
+            messagebox.showinfo("Delete", "No item selected to delete.")
+            return
+        _, path = self.selected_item
+        #confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete:\n{path}?")
+        #if confirm:
+        self.delete_path(path)
 
     def add_multiple_folders(self):
         folder = filedialog.askdirectory(title="Select Folder to Add")
@@ -264,7 +278,11 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
             return
 
         menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="📂 Open", command=lambda: self.open_selected_path(path))
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="🗂 Open", command=lambda: self.open_selected_path(path))
+        menu.add_command(label="📋 Copy", command=lambda: self.set_clipboard(path, "copy"))
+        menu.add_command(label="✂️ Cut", command=lambda: self.set_clipboard(path, "cut"))
+        menu.add_command(label="📌 Paste", command=self.paste_clipboard)
         menu.add_command(label="📝 Rename", command=lambda: self.rename_path(path))
         menu.add_command(label="🗑 Delete", command=lambda: self.delete_path(path))
         menu.post(event.x_root, event.y_root)
@@ -284,14 +302,30 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
     def go_back(self, event=None):
         if self.history_index > 0:
             self.history_index -= 1
-            self.load_folder(self.history[self.history_index])
+            folder = self.history[self.history_index]
+            if os.path.exists(folder):
+                self.load_folder(folder)
+            else:
+                messagebox.showerror("Missing Folder", f"Folder no longer exists:\n{folder}")
+                self.remove_invalid_history()
             self.update_nav_buttons()
+
+    def remove_invalid_history(self):
+    # Remove non-existent paths from history
+        self.history = [path for path in self.history if os.path.exists(path)]
+        self.history_index = min(self.history_index, len(self.history) - 1)
 
     def go_forward(self, event=None):
         if self.history_index < len(self.history) - 1:
             self.history_index += 1
-            self.load_folder(self.history[self.history_index])
-            self.update_nav_buttons()
+            folder = self.history[self.history_index]
+        if os.path.exists(folder):
+            self.load_folder(folder)
+        else:
+            messagebox.showerror("Missing Folder", f"Folder no longer exists:\n{folder}")
+            self.remove_invalid_history()
+        self.update_nav_buttons()
+
 
     def on_search_enter(self, event=None):
         self.search_entry.selection_clear()
@@ -329,3 +363,57 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
         self.update_nav_buttons()
 
 
+    def handle_ctrl_copy(self, event=None):
+        if self.selected_item:
+            _, path = self.selected_item
+            self.set_clipboard(path, "copy")
+
+    def handle_ctrl_cut(self, event=None):
+         if self.selected_item:
+            _, path = self.selected_item
+            self.set_clipboard(path, "cut")
+
+    def handle_ctrl_paste(self, event=None):
+        self.paste_clipboard()
+
+    def set_clipboard(self, path, action):
+        self.clipboard_path = path
+        self.clipboard_action = action
+        messagebox.showinfo("Clipboard", f"{action.title()} ready for: {os.path.basename(path)}")
+
+    def paste_clipboard(self):
+        if not self.clipboard_path or not self.clipboard_action:
+            messagebox.showwarning("Paste", "Clipboard is empty.")
+            return
+        if not self.current_path or not os.path.isdir(self.current_path):
+            messagebox.showerror("Paste", "No valid destination folder.")
+            return
+
+        src = self.clipboard_path
+        base_name = os.path.basename(src)
+        dst = os.path.join(self.current_path, base_name)
+
+    # If same name exists, auto-rename
+        counter = 1
+        while os.path.exists(dst):
+            name, ext = os.path.splitext(base_name)
+            dst = os.path.join(self.current_path, f"{name}_copy{counter}{ext}")
+            counter += 1
+
+        try:
+            if self.clipboard_action == "copy":
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+            elif self.clipboard_action == "cut":
+                shutil.move(src, dst)
+                self.clipboard_path = None
+                self.clipboard_action = None
+            else:
+                raise Exception("Unknown clipboard action.")
+        
+            self.load_folder(self.current_path)
+            messagebox.showinfo("Paste", "Item pasted successfully.")
+        except Exception as e:
+            messagebox.showerror("Paste Error", str(e))
