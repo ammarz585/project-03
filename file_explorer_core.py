@@ -60,21 +60,19 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
             bd=2
         )
         self.search_entry.insert(0, self.search_placeholder)
+        self.search_entry.config(fg="gray")
         self.search_entry.bind("<FocusIn>", self.clear_search_placeholder)
         self.search_entry.bind("<FocusOut>", self.add_search_placeholder)
         self.search_entry.bind("<Return>", self.on_search_enter)
-        self.search_entry.config(state=tk.DISABLED)
         self.search_entry.pack(side=tk.LEFT, padx=5)
 
-        search_button = tk.Button(
+        self.search_button = tk.Button(
             search_frame,
             image=self.search_icon,
             command=self.handle_search_click,
-            relief=tk.FLAT,
-            state=tk.DISABLED
+            relief=tk.FLAT
         )
-        search_button.pack(side=tk.LEFT, padx=5)
-        self.search_button = search_button
+        self.search_button.pack(side=tk.LEFT, padx=5)
 
         # === Folder Selector Frame ===
         folder_selector_frame = tk.Frame(self.root)
@@ -112,6 +110,9 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
 
         self.try_initial_folder()
 
+        # ✅ Fix focus bug once everything is initialized
+        self.root.after(200, lambda: self.canvas.focus_set())
+
     def try_initial_folder(self):
         folder = filedialog.askdirectory(title="Select Root Folder")
         if folder:
@@ -131,11 +132,15 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
 
         icon_label = tk.Label(frame, image=self.folder_icon, bg="white", cursor="hand2")
         icon_label.pack()
-    # Bind click on icon label to open folder
         icon_label.bind("<Button-1>", lambda e, f=folder: self.open_folder_path(f))
 
         text_btn = tk.Button(frame, text=os.path.basename(folder), command=lambda f=folder: self.open_folder_path(f), relief=tk.GROOVE)
         text_btn.pack()
+
+    # ❌ Remove button only from GUI (not from disk)
+        remove_btn = tk.Button(frame, text="❌", fg="red", command=lambda: self.remove_folder_button(folder, frame), relief=tk.FLAT)
+        remove_btn.pack()
+
 
     def on_frame_configure(self, event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -143,16 +148,16 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
     def clear_search_placeholder(self, event):
         if self.search_var.get() == self.search_placeholder:
             self.search_entry.delete(0, tk.END)
+            self.search_entry.config(fg="black")
 
     def add_search_placeholder(self, event):
         if not self.search_var.get():
             self.search_entry.insert(0, self.search_placeholder)
+            self.search_entry.config(fg="gray")
 
     def open_folder_path(self, folder):
         self.btn_add_folder.config(state=tk.NORMAL)
         self.btn_add_file.config(state=tk.NORMAL)
-        self.search_entry.config(state=tk.NORMAL)
-        self.search_button.config(state=tk.NORMAL)
         self.load_folder(folder)
         self.push_history(folder)
 
@@ -175,9 +180,7 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
         icon_size = 64
         padding_x = 30
         padding_y = 60
-        columns = max(1, self.canvas.winfo_width() // (icon_size + padding_x))
-        if columns == 0:
-            columns = 10
+        columns = max(1, self.canvas.winfo_width() // (icon_size + padding_x)) or 10
 
         row, col = 0, 0
         for item in items:
@@ -220,6 +223,7 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
                 row += 1
 
         self.update_nav_buttons()
+
     def select_item(self, frame, path):
         if self.selected_item:
             old_frame, _ = self.selected_item
@@ -242,6 +246,7 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
             frame = frame.master
         else:
             return
+
         path = None
         if self.selected_item and self.selected_item[0] == frame:
             path = self.selected_item[1]
@@ -254,10 +259,12 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
                         path = os.path.join(self.current_path, text)
                         self.select_item(frame, path)
                         break
+
         if not path:
             return
+
         menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="🗂 Open", command=lambda: self.open_selected_path(path))
+        menu.add_command(label="📂 Open", command=lambda: self.open_selected_path(path))
         menu.add_command(label="📝 Rename", command=lambda: self.rename_path(path))
         menu.add_command(label="🗑 Delete", command=lambda: self.delete_path(path))
         menu.post(event.x_root, event.y_root)
@@ -279,15 +286,46 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
             self.history_index -= 1
             self.load_folder(self.history[self.history_index])
             self.update_nav_buttons()
+
     def go_forward(self, event=None):
         if self.history_index < len(self.history) - 1:
             self.history_index += 1
             self.load_folder(self.history[self.history_index])
             self.update_nav_buttons()
+
     def on_search_enter(self, event=None):
         self.search_entry.selection_clear()
         self.search_items()
         self.canvas.focus_set()
+
     def handle_search_click(self):
         self.search_items()
         self.canvas.focus_set()
+
+    def remove_folder_button(self, folder, frame):
+    # Remove from folder path list
+        if folder in self.folder_paths:
+            self.folder_paths.remove(folder)
+
+    # Remove the folder's GUI frame
+        frame.destroy()
+
+    # Remove all history entries that point to this folder or its subfolders
+        self.history = [p for p in self.history if not p.startswith(folder)]
+    
+    # Fix history index
+        if self.history:
+            self.history_index = min(self.history_index, len(self.history) - 1)
+            self.load_folder(self.history[self.history_index])
+        else:
+            self.history_index = -1
+            self.current_path = None
+            self.clear_explorer_view()
+            self.btn_add_folder.config(state=tk.DISABLED)
+            self.btn_add_file.config(state=tk.DISABLED)
+            self.search_entry.config(state=tk.DISABLED)
+            self.search_button.config(state=tk.DISABLED)
+
+        self.update_nav_buttons()
+
+
