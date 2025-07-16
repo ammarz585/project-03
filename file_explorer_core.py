@@ -20,7 +20,7 @@ class FileExplorerApp(tk.Frame, FileOperationsMixin, SearchOperationsMixin):
         self.icon_refs = {}
 
         self.root.title("📁 Recursive File Explorer")
-        self.root.geometry("700x600")
+        self.root.geometry("800x600")
 
         # === Top Frame ===
         top_frame = tk.Frame(self.root)
