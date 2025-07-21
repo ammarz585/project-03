@@ -41,7 +41,7 @@ def load_icons(master):
     load_icon_for_extension('.mp4', 'video.png')
     load_icon_for_extension('.exe', 'exe.png')
     load_icon_for_extension('.docx', 'docx.png')
-    load_icon_for_extension('.excel', 'excel.png')
+    load_icon_for_extension('.xlxs', 'excel.png')
     load_icon_for_extension('.ppt', 'ppt.png')
     
     # You can add more extensions here if needed
