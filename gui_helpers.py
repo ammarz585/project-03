@@ -1,37 +1,48 @@
-# gui_helpers.py
-from PIL import Image, ImageTk#type:ignore
+from PIL import Image, ImageTk  # type:ignore
 import os
 import platform
 import subprocess
+import sys
 
 folder_icon = None
 file_icon = None
 extension_icons = {}
 search_icon = None
 
+def resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and PyInstaller
+    """
+    try:
+        base_path = sys._MEIPASS  # PyInstaller temp folder
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 def load_icons(master):
     global folder_icon, file_icon, extension_icons, search_icon
 
-    folder_img = Image.open(os.path.join("icons", "folder.png")).resize((32,32))
+    folder_img = Image.open(resource_path(os.path.join("icons", "folder.png"))).resize((32, 32))
     folder_icon = ImageTk.PhotoImage(folder_img, master=master)
 
-    file_img = Image.open(os.path.join("icons", "file.png")).resize((32,32))
+    file_img = Image.open(resource_path(os.path.join("icons", "file.png"))).resize((32, 32))
     file_icon = ImageTk.PhotoImage(file_img, master=master)
 
-    search_img = Image.open(os.path.join("icons", "search.png")).resize((20,20))
+    search_img = Image.open(resource_path(os.path.join("icons", "search.png"))).resize((20, 20))
     search_icon = ImageTk.PhotoImage(search_img, master=master)
 
-    extension_icons = {}
+    extension_icons.clear()
 
     def load_icon_for_extension(ext, icon_file):
         try:
-            img_path = os.path.join("icons", icon_file)
-            img = Image.open(img_path).resize((32,32))
+            img_path = resource_path(os.path.join("icons", icon_file))
+            img = Image.open(img_path).resize((32, 32))
             extension_icons[ext.lower()] = ImageTk.PhotoImage(img, master=master)
         except Exception as e:
             print(f"Failed to load icon {icon_file}: {e}")
 
-    # Load icons for specific extensions - make sure these files exist inside the icons folder
+    # Load icons for specific extensions - only filenames here
     load_icon_for_extension('.txt', 'text.png')
     load_icon_for_extension('.py', 'py.png')
     load_icon_for_extension('.pdf', 'pdf.png')
@@ -41,10 +52,10 @@ def load_icons(master):
     load_icon_for_extension('.mp4', 'video.png')
     load_icon_for_extension('.exe', 'exe.png')
     load_icon_for_extension('.docx', 'docx.png')
-    load_icon_for_extension('.xlxs', 'excel.png')
+    load_icon_for_extension('.xlsx', 'excel.png')  # fixed extension
     load_icon_for_extension('.ppt', 'ppt.png')
-    
-    # You can add more extensions here if needed
+
+    # Add more extensions if needed here
 
 def get_icon_for_file(path):
     global file_icon, extension_icons
